@@ -1,0 +1,142 @@
+info:
+  contact: {}
+paths:
+  /mockRule/addRule:
+    post:
+      consumes:
+      - application/json
+      description: 拦截规则新增时的一些安全检查，不重复检查等
+      parameters:
+      - description: ownerName
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: 新增的实体
+        in: body
+        name: proxyRulesModel
+        schema:
+          type: string
+      responses:
+        "200":
+          description: code","message"}
+          schema:
+            type: string
+      summary: 新增拦截规则
+      tags:
+      - 拦截规则相关接口
+  /mockRule/deleteRulesById:
+    post:
+      consumes:
+      - application/json
+      description: 逻辑删除一个拦截规则
+      parameters:
+      - description: ownerName
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: 拦截规则的id
+        in: query
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: code","message"}
+          schema:
+            type: string
+      summary: 删除一个拦截规则
+      tags:
+      - 拦截规则相关接口
+  /mockRule/getAllRules:
+    get:
+      description: 无差别获取，不根据用户进行隔离
+      parameters:
+      - description: ownerName
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      responses:
+        "200":
+          description: code","message"}
+          schema:
+            type: string
+      summary: 获取当前所有的规则
+      tags:
+      - 拦截规则相关接口
+  /mockRule/getRuleByCons:
+    get:
+      consumes:
+      - application/json
+      description: 根据拦截规则的其中一个或者多个参数来进行筛选，多个参数同时满足时才会返回
+      parameters:
+      - description: ownerName
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: 需要满足的多个条件json
+        in: body
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: code","message"}
+          schema:
+            type: string
+      summary: 根据指定的条件来获取一部分拦截规则
+      tags:
+      - 拦截规则相关接口
+  /mockRule/getRuleDetailById:
+    get:
+      consumes:
+      - application/json
+      description: 根据拦截规则的其中一个或者多个参数来进行筛选，多个参数同时满足时才会返回
+      parameters:
+      - description: ownerName
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: 拦截规则的id
+        in: query
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: code","message"}
+          schema:
+            type: string
+      summary: 根据指定的条件来获取一部分拦截规则
+      tags:
+      - 拦截规则相关接口
+  /mockRule/updateRulesById:
+    post:
+      consumes:
+      - application/json
+      description: 更新一个拦截规则的所有信息
+      parameters:
+      - description: ownerName
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: 拦截规则的id
+        in: query
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: code","message"}
+          schema:
+            type: string
+      summary: 根据id更新一个拦截规则
+      tags:
+      - 拦截规则相关接口
+swagger: "2.0"
