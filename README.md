@@ -82,4 +82,101 @@
 11. 「设备服务端」持续消费「设备客户端下行消息管道」
 12. 「设备服务端」将消息写出到「设备客户端」，完成整个长链接的消息链路
 
-## 2、长链接拦截规则 实现
+### 2、长链接拦截规则 实现
+#### 1）动态规则配置
+基于缓存实现的动态规则配置，即在当前会话中有效，服务重启或
+> JSON 消息中包含 #*- （intercept rule） -*#
+就是将规则拼接成一个JSON字符串，放入一个定制化的字符之间，如果包含这样的字符串，就动态的将规则添加进 redis 中，设置一个过期时间，就实现了指定时间段内规则生效。
+> 可以实现的效果：在章鱼工作台中，输入 【#*- （订单卡片） -*#】，就可以让Mock服务直接模拟客户端推送过来一个「商品卡片」「订单卡片」消息。
+
+- 消息处理器的业务流程图如下：
+![image](https://user-images.githubusercontent.com/17244253/220855669-6cc065a1-1edc-4cfe-b744-e7b18052bce3.png)
+
+#### 2）静态规则配置
+设计原则：一个人使用Mock服务，尽可能不影响到其他人
+理想的情况是这两个用户在使用Mock Server的时候，应该是要互不干涉的，并且再多一个用户C，不想使用Mock服务的时候，是需要真实访问到实际的目标ip地址的，拿到真实的返回数据的。
+![image](https://user-images.githubusercontent.com/17244253/220855770-c6f89c55-09b5-486e-b97a-b771c8221a4c.png)
+也就是所有人同时使用Mock服务，让想用mock的用，不想用的直接穿透mock进行放行。
+
+### 4、短连接拦截规则  实现
+**拦截规则实现**
+我们知道所有的请求到达Mock Server之后，Mock Server都做了哪些事情呢？
+![image](https://user-images.githubusercontent.com/17244253/220855929-5ce927dd-6765-4142-8524-ea243f48540d.png)
+
+- 拦截实体
+```go
+type ProxyCondition struct {
+   InterceptSite  int    // 拦截的目标位置，Header、Body、Uri 这几种方式
+   IsContain      bool   // 包含、不包含
+   InterceptKey   string // 拦截的 目标 key
+   InterceptValue string // 拦截的 目标 value
+}
+type ProxyRulesModel struct {
+   gorm.Model
+   OwnerName          string           // 所属的用户
+   ProxyMethod        string           // 需要代理的方法
+   ProxyHost          string           // 需要代理的主机地址 ip + port
+   ProxyUrl           string           // 需要代理的路由地址，不包含请求参数 和 http:// 或 https://
+   ProxyConditionJson string           // 代理条件，json字符串，可以传入多个条件
+   ProxyConditions    []ProxyCondition gorm:"-" // 代理的条件集合, gorm 忽略此字段
+   CustomizedResp     string           // 定制的返回值
+}
+```
+- 拦截核心逻辑
+```go
+// ProxyHandler
+// @Summary    代理核心方法
+// @Tags   代理模块
+// @Router /mock/* [ANY]
+func ProxyHandler(ctx *gin.Context) {
+   remoteHost, remotePathWithOutParams := getHostAndPathFromCtx(ctx)
+   // 从请求头中获取当前用户信息
+   ownerName := ctx.Request.Header.Get("ownerName")
+   fmt.Println("* mock服务 \n 解析出来的 remoteHost=", remoteHost, " remotePathWithOutParams=", remotePathWithOutParams, "\n mock服务 *\n")
+   // 1. 根据 路由信息，从数据库中查询数据
+   rulesModel := models.GetRulesByUserAndUrl(ownerName, remotePathWithOutParams)
+   //fmt.Println("---checkSatisfyConditions(ctx, rulesModel.ProxyConditionJson)---", checkSatisfyConditions(ctx, rulesModel.ProxyConditionJson))
+   // 2. 查询规则存在并且满足了拦截条件，才进行自定义mock数据返回
+   if rulesModel.ProxyUrl != "" && checkSatisfyConditions(ctx, rulesModel.ProxyConditionJson) {
+      fmt.Println("--- 拦截成功 ---")
+      jsonMap, err := utils.JsonStringToMap(rulesModel.CustomizedResp) // 将自定义的返回值 字符串 捞出来转换为map
+      if err != nil {
+         fmt.Println("JSON 字符串 转 Map 出错，检查数据库中 字符串是否是后边有人改动过")
+         ctx.JSON(http.StatusInternalServerError, err)
+         return
+      }
+      ctx.JSON(http.StatusOK, jsonMap) // 将自定义的返回值 设置为返回值
+      return
+   } else {
+      // 拦截失败，直接转发，使用url中解析出来的远程ip地址转发
+      var proxyUrl, _ = url.Parse(remoteHost)
+      proxy := httputil.NewSingleHostReverseProxy(proxyUrl)
+      ctx.Request.URL.Path = remotePathWithOutParams // 修改上下文的路由地址
+      ctx.Request.URL.Host = remoteHost              // 修改 上下文 中的 请求 主机地址，可以是host 也可以是 host:port
+      proxy.ServeHTTP(ctx.Writer, ctx.Request)
+      ctx.Abort()
+   }
+}
+```
+- 放行转发实现
+```go
+// 拦截失败，直接转发，使用url中解析出来的远程ip地址转发
+var proxyUrl, _ = url.Parse(remoteHost)
+proxy := httputil.NewSingleHostReverseProxy(proxyUrl)
+ctx.Request.URL.Path = remotePathWithOutParams // 修改上下文的路由地址
+ctx.Request.URL.Host = remoteHost              // 修改 上下文 中的 请求 主机地址，可以是host 也可以是 host:port
+proxy.ServeHTTP(ctx.Writer, ctx.Request)
+ctx.Abort()
+```
+### 拦截与放行的视频演示：
+视频演示的前置：设置了拦截规则，如果 请求体 中 不包含 qsr_key = 123 时，进行拦截，包含时则放行。
+https://user-images.githubusercontent.com/17244253/220856252-9c3417dc-7350-4004-a740-094a053268bc.mp4
+
+## 四、未来规划
+1. 写个配套的前端页面
+2. 把 RPC Mock 加进去（Dubbo、gRPC）
+3. 长短连接进行强互动，即时间编排。如某一个接口触发后长链接推送指定的JSON消息
+4. 搭配性能服务，对前后端性能进行场景压测。
+如一个场景中使用ABC三个接口，此时，我们将D接口进行mock，使其不影响ABC接口的性能验证
+1. 多返回值随机设置，目前mock server针对拦截到的请求，只允许预置一个返回消息。未来期望可以设置多个，并且进行随机（顺序）进行返回。
+
